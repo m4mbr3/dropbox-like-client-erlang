@@ -47,30 +47,31 @@ start(Dropboximpl, Home_env) -> menu(),
                 true ->
                     start(Dropboximpl, Home_env)
                end.
-               
+
+
 check_operation(Dropboximpl, Exp) -> case Exp of 
                             "subscribe"->
                                 subscribe(Dropboximpl);
                             "remove_account" ->
-                                remove_account();
+                                remove_account(Dropboximpl);
                             "login" ->
-                                login();
+                                login(Dropboximpl);
                             "logout" ->
-                                logout();
+                                logout(Dropboximpl);
                             "send_file" ->
-                                send_file();
+                                send_file(Dropboximpl);
                             "remove_file" ->
-                                remove_file();
+                                remove_file(Dropboximpl);
                             "clear" ->
-                                clear();
+                                clear(Dropboximpl);
                             "dir" ->
-                                dir();
+                                dir(Dropboximpl);
                             "ls" ->
-                                ls();
+                                ls(Dropboximpl);
                             "help" ->
-                                help();
+                                help(Dropboximpl);
                             "exit" ->
-                                go_out()
+                                go_out(Dropboximpl)
                         end.
 
 
@@ -86,16 +87,25 @@ subscribe(Dropboximpl) -> Name = string:strip(io:get_line("Insert your name: "),
                 end.
 
 
-remove_account() -> ciao.
-login() -> ciao.
-logout() -> ciao.
-send_file() -> ciao.
-remove_file() -> ciao.
-clear() -> ciao.
-dir() -> ciao.
-ls() -> ciao.
-help() -> ciao.
-go_out() -> halt().
+remove_account(Dropboximpl) -> Name = string:strip(io:get_line("Insert your username: "), both, $\n),
+                    Password = string:strip(io:get_line("Insert the password for "++ Name ++": "), both, $\n),
+                    case 'Dropboxlike_Repository':remove(Dropboximpl, Name,Password) of
+                        true ->
+                            io:fwrite("Removed user \n");
+                        false -> 
+                            remove_account(Dropboximpl)
+                    end.
+
+
+login(Dropboximpl) -> ciao.
+logout(Dropboximpl) -> ciao.
+send_file(Dropboximpl) -> ciao.
+remove_file(Dropboximpl) -> ciao.
+clear(Dropboximpl) -> ciao.
+dir(Dropboximpl) -> ciao.
+ls(Dropboximpl) -> ciao.
+help(Dropboximpl) -> ciao.
+go_out(Dropboximpl) -> halt().
 
 
 insert_username(Dropboximpl, ToBeShown) -> El = io:get_line(ToBeShown),
