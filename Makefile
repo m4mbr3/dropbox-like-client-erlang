@@ -1,6 +1,7 @@
 all:
 	erlc -o Dropboxlike ../dropbox-like.idl
-	erlc main.erl
+	erlc -o Dropboxlike Dropboxlike/*.erl
+	erlc -I Dropboxlike *.erl
 idl: 
 	erlc -o Dropboxlike ../dropbox-like.idl 
 	
