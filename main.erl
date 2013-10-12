@@ -32,7 +32,8 @@ dropboxlike_client() ->
         false -> 
             Home_env = ".";
         _ ->
-            Home_env = Home
+            Home_env = Home++"/Dropboxlikeclient",
+            file:make_dir(Home_env)
     end,
     NS = corba:string_to_object("corbaloc:iiop:localhost:1050/NameService"),
     Dropboximpl = 'CosNaming_NamingContextExt':'resolve_str' (NS, "DBServer"),
@@ -40,7 +41,7 @@ dropboxlike_client() ->
 
 start(Dropboximpl, Home_env) -> menu(),
                {ok,[Choice]} = io:fread("dropboxlike $ ", "~s"),
-               check_operation(Dropboximpl,Choice),
+               check_operation(Dropboximpl,Choice, Home_env),
                if
                 Choice =:= "exit" ->
                     halt();
@@ -49,11 +50,11 @@ start(Dropboximpl, Home_env) -> menu(),
                end.
 
 
-check_operation(Dropboximpl, Exp) -> case Exp of 
+check_operation(Dropboximpl, Exp, Home_env) -> case Exp of 
                             "subscribe"->
-                                subscribe(Dropboximpl);
+                                subscribe(Dropboximpl,Home_env);
                             "remove_account" ->
-                                remove_account(Dropboximpl);
+                                remove_account(Dropboximpl, Home_env);
                             "login" ->
                                 login(Dropboximpl);
                             "logout" ->
@@ -75,25 +76,29 @@ check_operation(Dropboximpl, Exp) -> case Exp of
                         end.
 
 
-subscribe(Dropboximpl) -> Name = string:strip(io:get_line("Insert your name: "),both, $\n),
+subscribe(Dropboximpl,Home_env) -> Name = string:strip(io:get_line("Insert your name: "),both, $\n),
                 Surname = string:strip(io:get_line("Insert your surname: "), both, $\n),
                 Username = string:strip(insert_username(Dropboximpl, "Insert your username: "),both, $\n),
                 Password = string:strip(insert_password(),both, $\n),
                 case 'Dropboxlike_Repository':subscribe(Dropboximpl, Name, Surname, Username, Password) of 
-                    true  -> 
-                        io:fwrite("Registered user \n");
+                    true ->
+                        io:fwrite("Registered user \n"),
+                        file:make_dir(Home_env++"/"++Username),
+                        io:fwrite("Home directory for user "++ Username ++ " removed\n");
                     false ->
                         io:fwrite("Error during the registration \n")
                 end.
 
 
-remove_account(Dropboximpl) -> Name = string:strip(io:get_line("Insert your username: "), both, $\n),
-                    Password = string:strip(io:get_line("Insert the password for "++ Name ++": "), both, $\n),
-                    case 'Dropboxlike_Repository':remove(Dropboximpl, Name,Password) of
+remove_account(Dropboximpl, Home_env) -> Username = string:strip(io:get_line("Insert your username: "), both, $\n),
+                    Password = string:strip(io:get_line("Insert the password for "++ Username ++": "), both, $\n),
+                    case 'Dropboxlike_Repository':remove(Dropboximpl, Username,Password) of
                         true ->
-                            io:fwrite("Removed user \n");
+                            io:fwrite("Removed user \n"),
+                            file:del_dir(Home_env++"/"++Username),
+                            io:fwrite("Home directory for user "++ Username ++" removed\n");
                         false -> 
-                            remove_account(Dropboximpl)
+                            io:fwrite("Error: maybe the user or/and the password are wrong\n")
                     end.
 
 
