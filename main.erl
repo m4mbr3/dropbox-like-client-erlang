@@ -84,7 +84,7 @@ subscribe(Dropboximpl,Home_env) -> Name = string:strip(io:get_line("Insert your 
                     true ->
                         io:fwrite("Registered user \n"),
                         file:make_dir(Home_env++"/"++Username),
-                        io:fwrite("Home directory for user "++ Username ++ " removed\n");
+                        io:fwrite("Home directory for user "++ Username ++ " created\n");
                     false ->
                         io:fwrite("Error during the registration \n")
                 end.
