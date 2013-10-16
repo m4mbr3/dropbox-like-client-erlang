@@ -168,8 +168,8 @@ send_file(Dropboximpl, L) ->
             io:fwrite(Path++"\n"),
             try 
                 {ok,OldPath} = file:get_cwd(),
-                file:set_cwd("/home/m4mbr3/"),
-                {ok, Binary} = file:read_file("contact.txt"),
+                file:set_cwd(filename:dirname(Path)),
+                {ok, Binary} = file:read_file(filename:basename(Path)),
                 file:set_cwd(OldPath),
                 Basename = filename:basename(Path),
                 ContextSha512 = crypto:hash_init(sha512),
@@ -195,6 +195,7 @@ hexstring(Binary) when is_binary(Binary) ->
 remove_file(Dropboximpl, L) -> L.
 clear(Dropboximpl, L) ->    io:fwrite("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"),
                             L.
+
 ls(Dropboximpl, L) -> 
     case 'Dropboxlike_Repository':isLogged(Dropboximpl, dict:fetch(username, L), dict:fetch(token, L)) of
         false ->
