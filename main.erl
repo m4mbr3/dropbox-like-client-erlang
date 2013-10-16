@@ -1,7 +1,9 @@
 -module(main).
--export([init/0, dropboxlike_client/0, start/3, print_file_list/1]).
+-author('m4mbr3@gmail.com').
+-export([init/0, dropboxlike_client/0, start/3, print_file_list/2]).
+-include_lib("Dropboxlike/Dropboxlike.hrl").
 %-record(login,{username="", token="", dev_id=""}).
-%-record(smallL,{name, md5}).
+%-record('Dropboxlike_FileAtRepository',{'ownerUserName','md5','cont','name'}).
 init() ->
     mnesia:start(),
     corba:orb_init([{domain, "ramnode"}]),
@@ -10,7 +12,6 @@ init() ->
     'oe_dropbox-like':'oe_register'().
 
 menu() ->   io:fwrite("/*************************  DropboxLike   ***************************/\n"),
-            
             io:fwrite("/***********  Author : Andrea Mambretti   Version 1.0   *************/ \n"),
             io:fwrite("/********************************************************************/ \n"),
             io:fwrite ("Select an operation:\n"),
@@ -147,7 +148,8 @@ login(Dropboximpl, L) ->
 logout(Dropboximpl, L) -> 
     case 'Dropboxlike_Repository':isLogged(Dropboximpl, dict:fetch(username, L), dict:fetch(token,L)) of
         false ->
-            io:fwrite("You are already logged!!!\n");
+            io:fwrite("Error: you are not logged\n"),
+            L;
         true ->
             'Dropboxlike_Repository':logout(Dropboximpl, dict:fetch(username, L), dict:fetch(dev_id, L), dict:fetch(token, L)),
             L1 = dict:store(username, "", L),
@@ -156,7 +158,40 @@ logout(Dropboximpl, L) ->
             L3
     end.
 
-send_file(Dropboximpl, L) -> L.
+send_file(Dropboximpl, L) -> 
+    case 'Dropboxlike_Repository':isLogged(Dropboximpl, dict:fetch(username, L), dict:fetch(token, L)) of
+        false ->
+            io:fwrite("Error: you are not logged\n"),
+            L;
+        true ->
+            Path = string:strip(io:get_line("Insert the _complete_ path to the file to upload:"),both, $\n),
+            io:fwrite(Path++"\n"),
+            try 
+                {ok,OldPath} = file:get_cwd(),
+                file:set_cwd("/home/m4mbr3/"),
+                {ok, Binary} = file:read_file("contact.txt"),
+                file:set_cwd(OldPath),
+                Basename = filename:basename(Path),
+                ContextSha512 = crypto:hash_init(sha512),
+                PartialSha512 = crypto:hash_update(ContextSha512, Binary),
+                Sha512 = hexstring(crypto:hash_final(PartialSha512)),
+                Owner = dict:fetch(username,L),
+                Entity = #'Dropboxlike_FileAtRepository' {'ownerUserName'=Owner, 'md5'=Sha512, 'cont'=Binary, 'name'=Basename},
+                'Dropboxlike_Repository':send(Dropboximpl,Entity, dict:fetch(username, L), dict:fetch(token, L)),
+                L2 = dict:append(files,[Basename, Sha512], L),
+                L2
+            catch 
+                {error, Reason} -> io:fwrite("Error: " ++ Reason),
+                                   io:fwrite("Try again...\n"),
+                                   send_file(Dropboximpl, L)
+            end
+    end.
+
+hexstring(Binary) when is_binary(Binary) ->
+    lists:flatten(lists:map(
+            fun(X) -> io_lib:format("~2.16.0b", [X]) end, 
+            binary_to_list(Binary))).
+
 remove_file(Dropboximpl, L) -> L.
 clear(Dropboximpl, L) ->    io:fwrite("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"),
                             L.
@@ -169,14 +204,15 @@ ls(Dropboximpl, L) ->
             io:fwrite("Your repository contains: \n"), 
             case dict:fetch(files,L) of
                 [] -> io:fwrite("No file found in your repository\n");
-                Files -> print_file_list(Files)
+                Files -> print_file_list(Files, 0)
             end,
             L
     end.
 
-print_file_list([X|XS]) -> io:fwrite(X),
-                           print_file_list(XS);
-print_file_list([])-> finish.
+print_file_list([X|XS], Num) -> [Name, _] = X,
+                            io:fwrite(integer_to_list(Num) ++ ") " ++ Name ++"\n"),
+                           print_file_list(XS, Num+1);
+print_file_list([], _)-> finish.
 
 
 help(Dropboximpl, L) -> menu(),
