@@ -153,8 +153,10 @@ load_info(Dict, Home_env) ->
     case file:open(".data",[read]) of
         {ok, File} -> 
             List = read_line_from_file(Dict, File),
+            file:set_cwd(OldPath),
             dict:append_list(files,List,Dict);
         {error,Reason} ->
+            file:set_cwd(OldPath),
             dict:store(files,[],Dict)
     end.
 read_line_from_file(Dict, File) ->
