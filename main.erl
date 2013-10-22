@@ -1,6 +1,6 @@
 -module(main).
 -author('m4mbr3@gmail.com').
--export([init/0, dropboxlike_client/0, print_file_list/2]).
+-export([init/0, dropboxlike_client/0]).
 -include_lib("Dropboxlike/Dropboxlike.hrl").
 
 init() ->
