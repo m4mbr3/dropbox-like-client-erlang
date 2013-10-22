@@ -164,7 +164,6 @@ downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
                     true ->
                         downloadNewFile(XS, FilesList,Dict, Dropboxlike);
                     false ->
-                                        erlang:display('Dropboxlike_Repository':get_file(Dropboxlike, dict:fetch(username, Dict), dict:fetch(token, Dict), FileName)),
                         DownloadedFile = 'Dropboxlike_Repository':get_file(Dropboxlike, dict:fetch(username, Dict), dict:fetch(token, Dict), FileName),
                         {ok,OldPath} = file:get_cwd(),
                         file:set_cwd(dict:fetch(home, Dict)++"/"++dict:fetch(username, Dict)),
