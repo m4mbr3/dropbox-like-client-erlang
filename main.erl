@@ -46,16 +46,13 @@ dropboxlike_client() ->
     Login1 = dict:store(username, "", Login),
     Login2 = dict:store(dev_id, "", Login1),
     Login3 = dict:store(token, "", Login2),
-    clear(Dropboximpl, Login3),
+    clear(Login3),
     Login4 = dict:store(files, [], Login3),
-    %Pid = spawn(fun update/0),
     menu(),
-    %start(Dropboximpl, Login4).
-    
     ReadCommandPid = spawn(fun read_command_loop/0),
     ExecuteCommandPid = spawn(fun execute_command_loop/0),
     UpdatePid = spawn(fun update_loop/0),
-    ReadCommandPid!{main_loop, Dropboximpl, Login4, self()},
+    ReadCommandPid!{main_loop, Login4, self()},
     loop_main(ReadCommandPid, ExecuteCommandPid, UpdatePid, Login4, Dropboximpl).
 
 loop_main(ReadCommandPid, ExecuteCommandPid, UpdatePid, Dict, Dropboxlike) ->
@@ -104,61 +101,68 @@ update_loop() ->
                     FilesFromServer = 'Dropboxlike_Repository':askListUser(Dropboximpl,dict:fetch(username, Dict),dict:fetch(token, Dict)),
                     NewFilesList = downloadNewFile(FilesFromServer, Files, Dict, Dropboximpl),
                     Dict_up = dict:append_list(files, NewFilesList, dict:erase(files,Dict)),
-                    %NewDict = removeFile(NewFilesList, FilesFromServer, Dict_up),
+                    ListFile = record_to_list(FilesFromServer),
+                    NewDict = removeFile(NewFilesList, ListFile, Dict_up),
                     %manca confronto con l'md5
                     %MainPID!{update_loop, NewDict},
-                    MainPID!{update_loop,Dict_up},
+                    MainPID!{update_loop,NewDict},
                     update_loop()
             end
     end.
-
+record_to_list ([X|XS]) ->
+    FileName = X#'Dropboxlike_SmallL'.'name',
+    SHA512 = X#'Dropboxlike_SmallL'.'md5',
+    lists:append([[FileName,SHA512]],record_to_list(XS));
+record_to_list ([]) -> [].
 
 removeFile([X|XS], FilesFromServer, Dict) ->
     try
-        [FileName, _] = X,
-        case string:equal(FileName, "NULL") of 
+        [Head|_] = FilesFromServer,
+        [FName,_] = Head,
+        case string :equal(FName, "NULL") of
             true -> Dict;
             false ->
-                case already_present_name(FileName, FilesFromServer) of
-                    true ->
-                        removeFile(XS, FilesFromServer, Dict);
+                [FileName, _] = X,
+                case string:equal(FileName, "NULL") of 
+                    true -> Dict;
                     false ->
-                        {ok, OldPath} = file:get_cwd(),
-                        file:set_cwd(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)),
-                        case file:delete(FileName) of
-                            ok ->
-                                Files = dict:fetch(files, Dict),
-                                NewFiles = remove_from_list(FileName, Files),
-                                NewDict = dict:erase(files,Dict),
-                                ToReturn = dict:append_list(files, NewFiles, NewDict),
-                                File = file:open(".data",[write]),
-                                write_on_file(NewFiles, File, dict:fetch(username,ToReturn)),
-                                file:set_cwd(OldPath),
-                                removeFile(XS,FilesFromServer, ToReturn);
-                            {error,Reason} ->
-                                file:set_cwd(OldPath),
-                                io:fwrite("Error: Impossible to remove a file during the update\n"),
-                                removeFile(XS,FilesFromServer, Dict)
+                        case already_present_name(FileName, FilesFromServer) of
+                            true ->
+                                removeFile(XS, FilesFromServer, Dict);
+                            false ->
+                                {ok, OldPath} = file:get_cwd(),
+                                file:set_cwd(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)),
+                                case file:delete(FileName) of
+                                    ok ->
+                                        Files = dict:fetch(files, Dict),
+                                        NewFiles = remove_from_list(FileName, Files),
+                                        NewDict = dict:erase(files,Dict),
+                                        ToReturn = dict:append_list(files, NewFiles, NewDict),
+                                        {ok, File} = file:open(".data",[write]),
+                                        write_on_file(NewFiles, File, dict:fetch(username,ToReturn)),
+                                        file:set_cwd(OldPath),
+                                        removeFile(XS,FilesFromServer, ToReturn);
+                                    {error,_} ->
+                                        file:set_cwd(OldPath),
+                                        io:fwrite("Error: Impossible to remove a file during the update\n"),
+                                        removeFile(XS,FilesFromServer, Dict)
+                                end
                         end
                 end
         end
     catch
-        throw:Term -> io:format("track is ~p~n", erlang:get_stacktrace());
-        exit:Reasonasd -> io:format("track is ~p~n", erlang:get_stacktrace());
-        error:Reasonqwe -> io:format("track is ~p~n", erlang:get_stacktrace())
+        throw:_ -> erlang:display(erlang:get_stacktrace());
+        exit:_ -> erlang:display(erlang:get_stacktrace());
+        error:_ -> erlang:display(erlang:get_stacktrace())
     end;
 
 removeFile([], _, Dict )  -> Dict.
-remove_from_metadata (FileName, Dict) ->
-    ListToWrite = remove_from_list(FileName, dict:fetch(files, Dict)),
-    Pointer = file:open(".data", [write]),
-    write_on_file(ListToWrite, Pointer, dict:fetch(username, Dict)).
 
 downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
     try
         FileName = X#'Dropboxlike_SmallL'.'name',
         case string:equal(FileName, "NULL") of
-            true-> nothing;
+            true-> [];
             false ->
                 case already_present_name(FileName, FilesList) of
                     true ->
@@ -169,7 +173,7 @@ downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
                         file:set_cwd(dict:fetch(home, Dict)++"/"++dict:fetch(username, Dict)),
                         case file:write_file(FileName, DownloadedFile#'Dropboxlike_FileAtRepository'.'cont',[write]) of
                             ok -> none;
-                            {error,Reason} -> io:fwrite("Error: Impossible to update your files\n")
+                            {error,_} -> io:fwrite("Error: Impossible to update your files\n")
                         end,
                         case file:open(".data", [append]) of
                             {ok, Pointer} ->
@@ -178,7 +182,7 @@ downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
                                 case file:open(".data",[write] ) of
                                     {ok, Pointer2} ->
                                         io:format(Pointer2, "~s:~s:~s\n",[DownloadedFile#'Dropboxlike_FileAtRepository'.'name',DownloadedFile#'Dropboxlike_FileAtRepository'.'md5', DownloadedFile#'Dropboxlike_FileAtRepository'.'ownerUserName']);
-                                    {error,Reason2} ->
+                                    {error,_} ->
                                         io:fwrite("Error: I cannot update the metadata during the update\n")
                                 end
                         end,
@@ -189,9 +193,9 @@ downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
                 end
             end
     catch
-        throw:Term -> erlang:display(erlang:get_stacktrace());
-        exit:Reasonasd -> io:format("track is ~p~n", erlang:get_stacktrace());
-        error:Reasonqwe -> io:format("track is ~p~n", erlang:get_stacktrace())
+        throw:_ -> erlang:display(erlang:get_stacktrace());
+        exit:_ -> erlang:display(erlang:get_stacktrace());
+        error:_ -> erlang:display(erlang:get_stacktrace())
     end;
 downloadNewFile([], FilesList,  _, _) -> FilesList.
 
@@ -200,15 +204,13 @@ downloadNewFile([], FilesList,  _, _) -> FilesList.
 
 read_command_loop() ->
     receive
-        {main_loop, Dropboximpl, Data, PidMain } ->
-            io:fwrite("Arrived a new message from main\n"),
+        {main_loop, Data, PidMain } ->
             case  string:equal(dict:fetch(username, Data),"") of
                 true ->
                     {ok,[Choice]} = io:fread("dropboxlike $ ", "~s");
                 false ->
                     {ok, [Choice]} = io:fread(dict:fetch(username,Data)++"@dropboxlike $ ", "~s")
             end,
-            io:fwrite("Read your choice: "++Choice++"\n"),
             PidMain!{read_loop, Choice},
             if
                 Choice =:= "exit" ->
@@ -237,7 +239,7 @@ execute_command_loop() ->
                     "remove_file" ->
                         remove_file(Dropboximpl, Data);
                     "clear" ->
-                        clear(Dropboximpl, Data);
+                        clear(Data);
                     "dir" ->
                         ls(Dropboximpl, Data);
                     "ls" ->
@@ -250,7 +252,6 @@ execute_command_loop() ->
                         io:fwrite("dropboxlike: "++NoCommand++": command not found\n"),
                         Data
                 end,
-                erlang:display(dict:fetch(home, New_Data)),
             PidMain!{execute_loop, New_Data},
             execute_command_loop()
     end.
@@ -323,7 +324,7 @@ load_info(Dict) ->
             List = read_line_from_file(File),
             file:set_cwd(OldPath),
             dict:append_list(files,List,Dict);
-        {error,Reason} ->
+        {error,_} ->
             file:set_cwd(OldPath),
             dict:store(files,[],Dict)
     end.
@@ -332,10 +333,10 @@ load_info(Dict) ->
 read_line_from_file(File) ->
     case file:read_line(File) of
         {ok,Data} ->
-            [FileName, Sha512, Username] = string:tokens(Data, ":"),
+            [FileName, Sha512, _] = string:tokens(Data, ":"),
             lists:append([[FileName, Sha512]], read_line_from_file(File));
         eof -> [];
-        {error, Reason} -> io:fwrite("Impossible to read local metadata\n")
+        {error, _} -> io:fwrite("Impossible to read local metadata\n")
     end.
 
 logout(Dropboximpl, L) ->
@@ -375,7 +376,7 @@ send_file(Dropboximpl, L) ->
                         Entity = #'Dropboxlike_FileAtRepository' {'ownerUserName'=Owner, 'md5'=Sha512, 'cont'=Binary, 'name'=Basename},
                         'Dropboxlike_Repository':send(Dropboximpl,Entity, dict:fetch(username, L), dict:fetch(token, L)),
                         case file:read_file_info(".data") of
-                            {ok, FileInfo} ->
+                            {ok, _} ->
                                 file:write_file(".data", Basename++":"++Sha512++":"++Owner++"\n", [append]);
                             {error, enoent} ->
                                 file:write_file(".data", Basename++":"++Sha512++":"++Owner++"\n", [write])
@@ -388,9 +389,10 @@ send_file(Dropboximpl, L) ->
                         L
                 end
             catch
-                {error, Reason} -> io:fwrite("Error: " ++ Reason),
-                                   io:fwrite("Try again...\n"),
-                                   send_file(Dropboximpl, L)
+                {error, Reason} -> 
+                    io:fwrite("Error: " ++ Reason),
+                    io:fwrite("Try again...\n"),
+                    send_file(Dropboximpl, L)
             end
     end.
 
@@ -483,7 +485,7 @@ remove_from_list(FileName, [X|XS]) ->
 remove_from_list(_,[]) -> [].
 
 
-clear(Dropboximpl, L) ->
+clear(L) ->
     io:fwrite("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"),
     L.
 
