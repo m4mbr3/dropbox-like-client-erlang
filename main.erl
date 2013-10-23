@@ -12,7 +12,7 @@ init() ->
 
 menu() ->
     io:fwrite("/*************************  DropboxLike   ***************************/\n"),
-    io:fwrite("/***********  Author : Andrea Mambretti   Version 1.0   *************/ \n"),
+    io:fwrite("/***********  Author : Andrea Mambretti   Version 1.1   *************/ \n"),
     io:fwrite("/********************************************************************/ \n"),
     io:fwrite ("Select an operation:\n"),
     io:fwrite ("\n"),
@@ -42,7 +42,6 @@ dropboxlike_client() ->
     Dropboximpl = 'CosNaming_NamingContextExt':'resolve_str' (NS, "DBServer"),
     Dict = dict:new(),
     Login = dict:store(home, Home_env, Dict),
-    erlang:display(dict:fetch(home, Login)),
     Login1 = dict:store(username, "", Login),
     Login2 = dict:store(dev_id, "", Login1),
     Login3 = dict:store(token, "", Login2),
@@ -58,7 +57,7 @@ dropboxlike_client() ->
 loop_main(ReadCommandPid, ExecuteCommandPid, UpdatePid, Dict, Dropboxlike) ->
     receive 
         {execute_loop, DictEx} ->
-            ReadCommandPid!{main_loop, Dropboxlike, DictEx, self()},
+            ReadCommandPid!{main_loop, DictEx, self()},
             loop_main(ReadCommandPid, ExecuteCommandPid, UpdatePid, DictEx, Dropboxlike);
         {read_loop, Choice} ->
             if
@@ -73,6 +72,7 @@ loop_main(ReadCommandPid, ExecuteCommandPid, UpdatePid, Dict, Dropboxlike) ->
         3000 ->
             UpdatePid!{main_loop,self(),Dict, Dropboxlike},
             receive_from_update(ReadCommandPid, ExecuteCommandPid, UpdatePid, Dict, Dropboxlike)
+
     end.
 
 receive_from_update(ReadCommandPid, ExecuteCommandPid, UpdatePid, Dict, Dropboxlike) ->
@@ -103,50 +103,93 @@ update_loop() ->
                     Dict_up = dict:append_list(files, NewFilesList, dict:erase(files,Dict)),
                     ListFile = record_to_list(FilesFromServer),
                     NewDict = removeFile(NewFilesList, ListFile, Dict_up),
-                    %manca confronto con l'md5
-                    %MainPID!{update_loop, NewDict},
-                    MainPID!{update_loop,NewDict},
+                    NewDictUp = updateFileModified(dict:fetch(files, NewDict), NewDict, Dropboximpl),
+                    MainPID!{update_loop,NewDictUp},
                     update_loop()
             end
     end.
+
 record_to_list ([X|XS]) ->
     FileName = X#'Dropboxlike_SmallL'.'name',
     SHA512 = X#'Dropboxlike_SmallL'.'md5',
     lists:append([[FileName,SHA512]],record_to_list(XS));
 record_to_list ([]) -> [].
 
+updateFileModified([X|XS], Dict, Dropboxlike) ->
+    try
+        [Name|Sha512_list] = X,
+        OldPath = file:get_cwd(),
+        file:set_cwd(dict:fetch(home, Dict)++"/"++dict:fetch(username,Dict)),
+        {ok, Binary} = file:read_file(Name),
+        ContextSha512 = crypto:hash_init(sha512),
+        PartialSha512 = crypto:hash_update(ContextSha512, Binary),
+        Sha512 = hexstring(crypto:hash_final(PartialSha512)),
+        case string:equal(Sha512, Sha512_list) of
+            true ->
+                file:set_cwd(OldPath),
+                updateFileModified(XS, Dict, Dropboxlike);
+            false ->
+                Entity = #'Dropboxlike_FileAtRepository' {'ownerUserName'=dict:fetch(username,Dict), 'md5'=Sha512, 'cont'=Binary, 'name'=Name},
+                'Dropboxlike_Repository':updateFile(Dropboxlike, Entity, dict:fetch(username,Dict), dict:fetch(token, Dict)),
+                ToInsert = lists:append([[Name, Sha512]], remove_from_list(Name, dict:fetch(files,Dict))),	
+                DictWithoutList = dict:erase(files, Dict),
+                DictUp = dict:append_list(files, ToInsert, DictWithoutList),
+                updateFileModified(XS,DictUp, Dropboxlike)
+        end
+    catch
+        throw:_ -> erlang:display(erlang:get_stacktrace());
+        exit:_ -> erlang:display(erlang:get_stacktrace());
+        error:_ -> erlang:display(erlang:get_stacktrace())
+    end;
+updateFileModified([], Dict, _) -> Dict.
+
+
 removeFile([X|XS], FilesFromServer, Dict) ->
     try
         [Head|_] = FilesFromServer,
         [FName,_] = Head,
         case string :equal(FName, "NULL") of
-            true -> Dict;
+            true ->
+                [FileName, _] = X,
+                {ok, OldPath} =  file:get_cwd(),
+                file:set_cwd(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)),
+                case file:delete(FileName) of
+                    ok ->
+                        Files = dict:fetch(files,Dict),
+                        NewFiles = remove_from_list(FileName, Files),
+                        NewDict = dict:erase(files,Dict),
+                        ToReturn = dict:append_list(files, NewFiles, NewDict),
+                        {ok, File} = file:open(".data", [write]),
+                        write_on_file(NewFiles, File, dict:fetch(username, ToReturn)),
+                        file:set_cwd(OldPath),
+                        removeFile(XS,FilesFromServer, ToReturn);
+                    {error,_} ->
+                        file:set_cwd(OldPath),
+                        io:fwrite("Error: Impossible to remove a file during the update \n"),
+                        removeFile(XS,FilesFromServer, Dict)
+                end;
             false ->
                 [FileName, _] = X,
-                case string:equal(FileName, "NULL") of 
-                    true -> Dict;
+                case already_present_name(FileName, FilesFromServer) of
+                    true ->
+                        removeFile(XS, FilesFromServer, Dict);
                     false ->
-                        case already_present_name(FileName, FilesFromServer) of
-                            true ->
-                                removeFile(XS, FilesFromServer, Dict);
-                            false ->
-                                {ok, OldPath} = file:get_cwd(),
-                                file:set_cwd(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)),
-                                case file:delete(FileName) of
-                                    ok ->
-                                        Files = dict:fetch(files, Dict),
-                                        NewFiles = remove_from_list(FileName, Files),
-                                        NewDict = dict:erase(files,Dict),
-                                        ToReturn = dict:append_list(files, NewFiles, NewDict),
-                                        {ok, File} = file:open(".data",[write]),
-                                        write_on_file(NewFiles, File, dict:fetch(username,ToReturn)),
-                                        file:set_cwd(OldPath),
-                                        removeFile(XS,FilesFromServer, ToReturn);
-                                    {error,_} ->
-                                        file:set_cwd(OldPath),
-                                        io:fwrite("Error: Impossible to remove a file during the update\n"),
-                                        removeFile(XS,FilesFromServer, Dict)
-                                end
+                        {ok, OldPath} = file:get_cwd(),
+                        file:set_cwd(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)),
+                        case file:delete(FileName) of
+                            ok ->
+                                Files = dict:fetch(files, Dict),
+                                NewFiles = remove_from_list(FileName, Files),
+                                NewDict = dict:erase(files,Dict),
+                                ToReturn = dict:append_list(files, NewFiles, NewDict),
+                                {ok, File} = file:open(".data",[write]),
+                                write_on_file(NewFiles, File, dict:fetch(username,ToReturn)),
+                                file:set_cwd(OldPath),
+                                removeFile(XS,FilesFromServer, ToReturn);
+                            {error,_} ->
+                                file:set_cwd(OldPath),
+                                io:fwrite("Error: Impossible to remove a file during the update\n"),
+                                removeFile(XS,FilesFromServer, Dict)
                         end
                 end
         end
@@ -161,12 +204,30 @@ removeFile([], _, Dict )  -> Dict.
 downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
     try
         FileName = X#'Dropboxlike_SmallL'.'name',
+        Sha512 = X#'Dropboxlike_SmallL'.'md5',
         case string:equal(FileName, "NULL") of
-            true-> [];
+            true-> FilesList;
             false ->
                 case already_present_name(FileName, FilesList) of
                     true ->
-                        downloadNewFile(XS, FilesList,Dict, Dropboxlike);
+                        case already_present(FileName, Sha512, FilesList) of
+                            true ->
+                                downloadNewFile(XS, FilesList, Dict, Dropboxlike);
+                            false ->
+                                DownloadedFile = 'Dropboxlike_Repository':get_file(Dropboxlike,dict:fetch(username, Dict), dict:fetch(token, Dict), FileName ),
+                                {ok,OldPath} = file:get_cwd(),
+                                file:set_cwd(dict:fetch(home, Dict)++"/"++dict:fetch(username, Dict)),
+                                case file:write_file(FileName, DownloadedFile#'Dropboxlike_FileAtRepository'.'cont',[write]) of
+                                     ok -> none;
+                                    {error,_} -> io:fwrite("Error: Impossible to update your files\n")
+                                end,
+                                NewListFile = lists:append(remove_from_list(FileName, FilesList), [[DownloadedFile#'Dropboxlike_FileAtRepository'.'name', DownloadedFile#'Dropboxlike_FileAtRepository'.'md5']]),
+                                {ok,File} = file:open(".data",[write]),
+                                write_on_file(NewListFile, File, dict:fetch(username,Dict)),
+                                file:close(File),
+                                file:set_cwd(OldPath),
+                                downloadNewFile(XS,NewListFile, Dict, Dropboxlike)
+                        end;
                     false ->
                         DownloadedFile = 'Dropboxlike_Repository':get_file(Dropboxlike, dict:fetch(username, Dict), dict:fetch(token, Dict), FileName),
                         {ok,OldPath} = file:get_cwd(),
@@ -187,11 +248,10 @@ downloadNewFile([X|XS], FilesList, Dict, Dropboxlike) ->
                                 end
                         end,
                         NewListFile = lists:append(FilesList, [[DownloadedFile#'Dropboxlike_FileAtRepository'.'name', DownloadedFile#'Dropboxlike_FileAtRepository'.'md5']]),
-                        %Manca l'aggiornamento dei file modificati remotamente
                         file:set_cwd(OldPath),
                         downloadNewFile(XS,NewListFile, Dict, Dropboxlike)
                 end
-            end
+        end
     catch
         throw:_ -> erlang:display(erlang:get_stacktrace());
         exit:_ -> erlang:display(erlang:get_stacktrace());
@@ -313,11 +373,11 @@ load_info(Dict) ->
     {ok, OldPath} = file:get_cwd(),
     case file:make_dir(dict:fetch(home,Dict)++"/"++dict:fetch(username, Dict)) of
         ok -> ok;
-        {error, Reas} -> erlang:display(Reas)
+        {error, _} -> error
     end,
     case file:set_cwd(dict:fetch(home, Dict)++"/"++dict:fetch(username, Dict)) of
         ok -> ok;
-        {error, Reasonm} -> erlang:display(Reasonm)
+        {error, _} -> error
     end,
     case file:open(".data",[read]) of
         {ok, File} ->
@@ -440,7 +500,6 @@ remove_file(Dropboximpl, L) ->
         true ->
             ls(Dropboximpl, L),
             FileName = string:strip(io:get_line("Insert the file to delete: "),both,$\n),
-            erlang:display(FileName),
             case dict:fetch(files, L) of
                 [] ->
                     io:fwrite("Error: the filename provided is not valid. Try again...\n"),
@@ -453,7 +512,10 @@ remove_file(Dropboximpl, L) ->
                             NewDict = dict:erase(files,L),
                             ToReturn = dict:append_list(files, NewFiles, NewDict),
                             {ok,OldPath} = file:get_cwd(),
-                            file:set_cwd(dict:fetch(home, ToReturn)++"/"++dict:fetch(username,ToReturn)),
+                            case file:set_cwd(dict:fetch(home, ToReturn)++"/"++dict:fetch(username,ToReturn)) of
+                                ok -> ok;
+                                {error, _} -> erlang:display("Problem to set_cwd ")
+                            end,
                             file:delete(FileName),
                             {ok,File} = file:open(".data",[write]),
                             write_on_file(NewFiles, File, dict:fetch(username,L)),
