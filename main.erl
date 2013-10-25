@@ -38,7 +38,13 @@ dropboxlike_client() ->
             Home_env = Home++"/Dropboxlikeclient",
             file:make_dir(Home_env)
     end,
-    NS = corba:string_to_object("corbaloc:iiop:localhost:1050/NameService"),
+    Address = os:getenv("DROPBOXLIKESERVERIP"),
+    case Address of
+        false ->
+            NS = corba:string_to_object("corbaloc:iiop:localhost:1050/NameService");
+        _ ->
+            NS = corba:string_to_object("corbaloc:iiop:"++Address++":1050/NameService")
+    end,
     Dropboximpl = 'CosNaming_NamingContextExt':'resolve_str' (NS, "DBServer"),
     Dict = dict:new(),
     Login = dict:store(home, Home_env, Dict),
