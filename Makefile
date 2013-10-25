@@ -9,3 +9,7 @@ client:
 	erlc -o Dropboxlike Dropboxlike/*.erl
 	erlc -I Dropboxlike *.erl
 
+clean:
+	rm -rf Dropboxlike
+	rm *.beam
+
