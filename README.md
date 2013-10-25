@@ -52,6 +52,6 @@ To run the dropboxlike client from the main folder of the client run the command
 erl -pa Dropboxlike/
 
 from the erlang command line run  
-`> c(main).`
-`> main:init().`
-`> main:dropboxlike_client().`
+`> c(main).`  
+`> main:init().`  
+`> main:dropboxlike_client().`  
